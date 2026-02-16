@@ -3,6 +3,7 @@ import {ApiError} from "../utils/ApiError.js";
 import { User} from "../models/user.models.js";
 import {uploadOnCloudinary} from "../utils/cloudinary.js";
 import { ApiResponse }  from "../utils/ApiResponse.js";
+import mongoose from "mongoose";
 import jwt from "jsonwebtoken"
 
 
@@ -114,7 +115,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
 
     const {email, username, password} = req.body
-    console.log("email:" , email);
+    console.log(email);
 
     if(!(username || email)) {
         throw new ApiError(400, "Username or email is required")
@@ -179,7 +180,7 @@ const logoutUser = asyncHandler(async (req, res) => {
     .status(200)
     .clearCookie("accessToken", options)
     .clearCookie("refreshToken", options)
-    .json(new ApiResponse(200, {}, "User logged"))
+    .json(new ApiResponse(200, {}, "User logged out"))
 
 
 })
@@ -194,7 +195,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     try {
         const decodedToken = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET)
     
-        const user = User.findById(decodeToken?._id)
+        const user = User.findById(decodedToken?._id)
     
         if (!user) {
             throw new ApiError(401, "Invalid refresh token")
