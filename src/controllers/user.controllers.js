@@ -136,7 +136,7 @@ const loginUser = asyncHandler(async (req, res) => {
     
     const {accessToken, refreshToken} = await generateAccessAndRefreshToken(user._id)
 
-    User.findById(user._id).select("-password -refreshToken")
+    const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
 
     const options = {
         httpOnly: true,
@@ -151,7 +151,7 @@ const loginUser = asyncHandler(async (req, res) => {
         new ApiResponse(
             200,
             {
-                user: loginUser, accessToken,
+                user: loggedInUser, accessToken,
                 refreshToken
             },
             "User logged in successfully"
@@ -159,7 +159,7 @@ const loginUser = asyncHandler(async (req, res) => {
     )
 })
 const logoutUser = asyncHandler(async (req, res) => {
-    User.findByIdAndUpdate(
+    await User.findByIdAndUpdate(
         req.user._id,
     {
         $set: {
@@ -186,7 +186,10 @@ const logoutUser = asyncHandler(async (req, res) => {
 })
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
-    const incomingRefreshToken = refreshAccessToken.cookies.refreshToken || req.body.refreshToken
+    const incomingRefreshToken = req.cookies?.refreshToken || req.body.refreshToken
+    console.log("Cookies:", req.cookies);
+    console.log("Body:", req.body);
+
 
     if (!incomingRefreshToken) {
         throw new ApiError(400, "Unauthorized request")
@@ -195,14 +198,14 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     try {
         const decodedToken = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET)
     
-        const user = User.findById(decodedToken?._id)
+        const user =await User.findById(decodedToken?._id)
     
         if (!user) {
             throw new ApiError(401, "Invalid refresh token")
         }
     
         if (incomingRefreshToken !== user?.refreshToken) {
-            throw new ApiError(401, "Refreah token is expired r used")
+            throw new ApiError(401, "Refreah token is expired or used")
         }
     
         const options = {
@@ -225,7 +228,6 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
         )
     } catch (error) {
         throw new ApiError(401, error?.message || "Invalid refresh token")
-        
     }
 
 })
@@ -237,6 +239,10 @@ const changeCurrentPassword = asyncHandler(async (req, res) =>
     const user = await User.findById(req.user?._id)
     const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
 
+    if (!user) {
+    throw new ApiError(404, "User not found")
+}
+
     if(!isPasswordCorrect) {
         throw new ApiError(401, "Old password is incorrect")
     }
@@ -247,8 +253,6 @@ const changeCurrentPassword = asyncHandler(async (req, res) =>
     return res
     .status(200)
     .json(new ApiResponse(200, {}, "Password changed successflly"))
-
-
 })
 
 const getCurrenUser = asyncHandler(async (req, res) => {
@@ -264,7 +268,7 @@ const updateUserProfile = asyncHandler(async (req, res) => {
         throw new ApiError(400, "At least one field is required to update")
     }
     
-    const user = User.findByIdAndUpdate(
+    const user = await User.findByIdAndUpdate(
         req.user?._id,
         {
             $set: {
@@ -317,7 +321,7 @@ const updateUserProfile = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Avatar file is missing")
     }
 
-    const avatar = await uploadOnCloudinary(coverImageLocalPath)
+    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
 
     if(!coverImage.url) {
         throw new ApiError(400, "Error while uploading on avatar")
@@ -386,7 +390,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
             $project: {
                 fullname: 1,
                 username: 1,
-                subscribersCpunt: 1,
+                subscribersCount: 1,
                 channelSubscribedCount: 1,
                 isSubscribed: 1,
                 avatar: 1,
@@ -402,7 +406,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
 
     return res
     .status(200)
-    .josn(new ApiResponse(200, channel[0], "Channel fetched successfully"))
+    .json(new ApiResponse(200, channel[0], "Channel fetched successfully"))
 
 })
 
