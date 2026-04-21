@@ -1,7 +1,62 @@
-import { ApiError } from "../utils/ApiError";
+import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { Tweet } from "../models/tweet.models.js" 
+import  Tweet  from "../models/tweet.models.js" 
+import mongoose from "mongoose"
+
+const getAllTweets = asyncHandler(async (req, res) => {
+    const parsed = parseInt(String(req.query.limit ?? "50"), 10)
+    const limit = Math.min(Number.isFinite(parsed) ? parsed : 50, 100)
+
+    const viewerId = req.user?._id ? new mongoose.Types.ObjectId(req.user._id) : null
+
+    const tweets = await Tweet.aggregate([
+        { $sort: { createdAt: -1 } },
+        { $limit: limit },
+        {
+            $lookup: {
+                from: "users",
+                localField: "owner",
+                foreignField: "_id",
+                as: "owner"
+            }
+        },
+        { $unwind: { path: "$owner", preserveNullAndEmptyArrays: true } },
+        {
+            $lookup: {
+                from: "likes",
+                localField: "_id",
+                foreignField: "tweet",
+                as: "likes"
+            }
+        },
+        {
+            $addFields: {
+                likesCount: { $size: "$likes" },
+                isLiked: viewerId ? { $in: [viewerId, "$likes.likedBy"] } : false
+            }
+        },
+        {
+            $project: {
+                content: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                likesCount: 1,
+                isLiked: 1,
+                owner: {
+                    _id: 1,
+                    username: 1,
+                    fullname: 1,
+                    avatar: 1
+                }
+            }
+        }
+    ])
+
+    return res.status(200).json(
+        new ApiResponse(200, tweets, "Tweets fetched successfully")
+    )
+})
 
 const createTweet = asyncHandler(async (req, res) => {
     const { content } = req.body
@@ -24,16 +79,58 @@ return res.status(201).json(
 const getUserTweets = asyncHandler(async (req, res) => {
     const { userId } = req.params
 
-    const tweets = await Tweet.find({
-        owner: userId
-    }).sort({ createdAt: -1 })
+    const ownerId = new mongoose.Types.ObjectId(userId)
+    const viewerId = req.user?._id ? new mongoose.Types.ObjectId(req.user._id) : null
+
+    const tweets = await Tweet.aggregate([
+        { $match: { owner: ownerId } },
+        { $sort: { createdAt: -1 } },
+        {
+            $lookup: {
+                from: "users",
+                localField: "owner",
+                foreignField: "_id",
+                as: "owner"
+            }
+        },
+        { $unwind: { path: "$owner", preserveNullAndEmptyArrays: true } },
+        {
+            $lookup: {
+                from: "likes",
+                localField: "_id",
+                foreignField: "tweet",
+                as: "likes"
+            }
+        },
+        {
+            $addFields: {
+                likesCount: { $size: "$likes" },
+                isLiked: viewerId ? { $in: [viewerId, "$likes.likedBy"] } : false
+            }
+        },
+        {
+            $project: {
+                content: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                likesCount: 1,
+                isLiked: 1,
+                owner: {
+                    _id: 1,
+                    username: 1,
+                    fullname: 1,
+                    avatar: 1
+                }
+            }
+        }
+    ])
 
     return res.status(200).json(
         new ApiResponse(200, tweets, "User tweets fetched successfully")
     )
 })
 
-const updateTweets = asyncHandler(async (req, res) => {
+const updateTweet = asyncHandler(async (req, res) => {
 
     const { tweetId } = req.params
     const { content } = req.body
@@ -76,8 +173,9 @@ const deleteTweet = asyncHandler(async (req, res) => {
 })
 
 export {
+    getAllTweets,
     createTweet,
     getUserTweets,
-    updateTweets,
+    updateTweet,
     deleteTweet
 }

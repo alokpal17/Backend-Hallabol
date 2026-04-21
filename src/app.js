@@ -4,8 +4,30 @@ import cookieParser from "cookie-parser"
 
 const app = express()
 
+const defaultOrigins = ["http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"]
+const envOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
+    : []
+
 app.use(cors({
-    origin: process.env.CORS_ORIGIN,
+    origin(origin, callback) {
+        if (!origin) {
+            return callback(null, true)
+        }
+        if (envOrigins.length > 0 && envOrigins.includes(origin)) {
+            return callback(null, true)
+        }
+        if (envOrigins.length === 0 && defaultOrigins.includes(origin)) {
+            return callback(null, true)
+        }
+        if (envOrigins.length === 0 && process.env.NODE_ENV !== "production") {
+            const devOk = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(origin)
+            if (devOk) {
+                return callback(null, true)
+            }
+        }
+        callback(null, false)
+    },
     credentials: true
 }))
 
@@ -38,5 +60,18 @@ app.use("/api/v1/playlist", playlistRouter)
 app.use("/api/v1/dashboard", dashboardRouter)
 
 // http://localhost:8000/api/v1/users/register
+
+app.use((err, _req, res, next) => {
+    if (res.headersSent) {
+        return next(err)
+    }
+    const statusCode = err.statusCode || 500
+    return res.status(statusCode).json({
+        statusCode,
+        message: err.message || "Internal Server Error",
+        success: false,
+        errors: err.errors || [],
+    })
+})
 
 export { app }

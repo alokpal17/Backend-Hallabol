@@ -5,6 +5,7 @@ import {ApiError} from "../utils/ApiError.js"
 import {ApiResponse} from "../utils/ApiResponse.js"
 import {asyncHandler} from "../utils/asyncHandler.js"
 import {uploadOnCloudinary} from "../utils/cloudinary.js"
+// Like lookup is done via MongoDB aggregation; no direct model usage needed here.
 
 
 const getAllVideos = asyncHandler(async (req, res) => {
@@ -48,6 +49,20 @@ const getAllVideos = asyncHandler(async (req, res) => {
             $unwind: "$owner"
         },
         {
+            $lookup: {
+                from: "likes",
+                localField: "_id",
+                foreignField: "video",
+                as: "likes"
+            }
+        },
+        {
+            $addFields: {
+                likesCount: { $size: "$likes" },
+                isLiked: { $in: [new mongoose.Types.ObjectId(req.user._id), "$likes.likedBy"] }
+            }
+        },
+        {
             $sort: sortStage
         },
         {
@@ -74,14 +89,17 @@ const publishAVideo = asyncHandler(async (req, res) => {
     }
 
     const video = await uploadOnCloudinary(videoLocalPath)
+
     const thumbnail = await uploadOnCloudinary(thumbnailLocalPath)
 
+    console.log("Cloudinary video response:", video)
     const newVideo = await Video.create({
         title,
         description,
         videoFile: video.url,
         thumbnail: thumbnail.url,
-        owner: req.user._id
+        owner: req.user._id,
+        duration: video.duration || 0
     })
 
     return res.status(200).json(
@@ -96,10 +114,21 @@ const getVideoById = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid video id")
     }
 
-    const video = await Video.findById(videoId).populate("owner", "username avatar")
+    const video = await Video.findByIdAndUpdate(
+        videoId,
+        { $inc: { views: 1 } },
+        { new: true }
+    ).populate("owner", "username avatar")
 
     if(!video) {
         throw new ApiError(404, "Video not found")
+    }
+
+    if (req.user) {
+        await User.findByIdAndUpdate(
+            req.user._id,
+            { $addToSet: { watchHistory: video._id } }
+        )
     }
 
     return res.status(200).json (

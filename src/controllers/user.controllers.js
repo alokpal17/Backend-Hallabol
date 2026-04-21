@@ -349,6 +349,8 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Username is required")
     }
 
+    const viewerId = req.user?._id ? new mongoose.Types.ObjectId(req.user._id) : null
+
     const channel = await User.aggregate([
         {
             $match: {
@@ -358,36 +360,55 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
         {
             $lookup: {
                 from: "subscriptions",
-                localField: "_id",
-                foreignField: "channel",
-                as: "subscribers"
+                let: { channelId: "$_id" },
+                pipeline: [
+                    { $match: { $expr: { $eq: ["$channel", "$$channelId"] } } },
+                    { $count: "count" }
+                ],
+                as: "subscribersAgg"
             }
         },
         {
             $lookup: {
                 from: "subscriptions",
-                localField: "_id",
-                foreignField: "subscriber",
-                as: "subscribedTo"
+                let: { channelId: "$_id" },
+                pipeline: [
+                    { $match: { $expr: { $eq: ["$subscriber", "$$channelId"] } } },
+                    { $count: "count" }
+                ],
+                as: "subscribedToAgg"
+            }
+        },
+        {
+            $lookup: {
+                from: "subscriptions",
+                let: { channelId: "$_id" },
+                pipeline: viewerId ? [
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    { $eq: ["$channel", "$$channelId"] },
+                                    { $eq: ["$subscriber", viewerId] }
+                                ]
+                            }
+                        }
+                    },
+                    { $limit: 1 }
+                ] : [{ $limit: 0 }],
+                as: "viewerSubscription"
             }
         },
         {
             $addFields: {
-                subscribersCount: {
-                    $size: "$subscribers"
-                },
-                channelSubscribedCount: {
-                    $size: "$subscribedTo"
-                },
-                isSubscribed: {
-                    if: {$in: [req.user?._id, "$subscribers.subscriber"]},
-                    then: true,
-                    else: false
-                }
+                subscribersCount: { $ifNull: [{ $first: "$subscribersAgg.count" }, 0] },
+                channelSubscribedCount: { $ifNull: [{ $first: "$subscribedToAgg.count" }, 0] },
+                isSubscribed: { $gt: [{ $size: "$viewerSubscription" }, 0] }
             }
         },
         {
             $project: {
+                _id: 1,
                 fullname: 1,
                 username: 1,
                 subscribersCount: 1,

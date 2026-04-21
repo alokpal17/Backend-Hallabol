@@ -1,5 +1,5 @@
-import mongoose, { Schema } from 'mongooose';
-import mongooseAggregatePaginate from "mongoose-aggregate-paginate"
+import mongoose, { Schema } from 'mongoose';
+import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2"
 
 const commentSchema = new Schema(
     {
